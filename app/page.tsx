@@ -20,9 +20,9 @@ type HourlyData = {
   wbgt: number;
 };
 
+// デフォルト初期地点（長野市: 48156 のみ）
 const DEFAULT_LOCATIONS: Location[] = [
   { id: '48156', name: '長野市' },
-  { id: '14163', name: '札幌' },
 ];
 
 export default function Home() {
@@ -42,6 +42,7 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // 初回保存地点の読み込み ＆ 旧誤ID（長野:48141）の自動クレンジング
   useEffect(() => {
     const saved = localStorage.getItem('hare_locations');
     if (saved) {
@@ -76,6 +77,7 @@ export default function Home() {
     }
   }, []);
 
+  // 設定画面展開時のマスター地点一覧取得
   useEffect(() => {
     if (isSettingsOpen && masterLocations.length === 0) {
       async function fetchMaster() {
@@ -94,6 +96,7 @@ export default function Home() {
     }
   }, [isSettingsOpen, masterLocations.length]);
 
+  // 選択地点のWBGTデータ取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
@@ -269,7 +272,6 @@ export default function Home() {
           <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
             {forecast.map((item, idx) => {
               const itemAdvice = getAdvice(ageInDays, item.wbgt, transport);
-              // 前のアイテムと日付が変わるタイミング（または1件目）で日付ヘッダーを表示
               const isNewDate = idx === 0 || item.dateStr !== forecast[idx - 1].dateStr;
 
               return (
@@ -290,7 +292,7 @@ export default function Home() {
                       {itemAdvice.correctedWbgt}
                     </span>
 
-                    {/* 列3: 状況バッジ */}
+                    {/* 列3: お散歩目安バッジ */}
                     <div className="text-right">
                       <span className={`inline-block text-xs text-white font-bold px-2.5 py-1 rounded-full ${itemAdvice.badgeColor}`}>
                         {itemAdvice.title.split('（')[0]}
