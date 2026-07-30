@@ -11,9 +11,6 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
-  const dd = String(now.getDate()).padStart(2, '0');
-  const currentHour = now.getHours();
-
   const yyyymm = `${yyyy}${mm}`;
 
   let currentWbgt: number | null = null;
@@ -68,34 +65,26 @@ export async function GET(request: NextRequest) {
       for (let i = 1; i < lines.length; i++) {
         const cols = lines[i].split(',').map(c => c.trim());
         if (cols.length >= 2) {
-          // 日時情報の取得 (例: "2026/07/30 21:00" や "21:00" や "21")
           const timeCol = cols[1] || cols[0] || '';
           let val = parseFloat(cols[cols.length - 1]);
 
-          // WBGT数値のバリデーション
           if (!isNaN(val) && val > 0) {
             if (val >= 50) val = val / 10;
             val = Math.round(val * 10) / 10;
 
-            // 時間のパース（21:00など）
-            let hourNum = -1;
             let displayTime = '';
 
             if (timeCol.includes(':')) {
               const parts = timeCol.split(' ');
-              const timePart = parts[parts.length - 1]; // "21:00"
-              displayTime = timePart;
-              hourNum = parseInt(timePart.split(':')[0], 10);
+              displayTime = parts[parts.length - 1];
             } else {
               const parsed = parseInt(timeCol, 10);
               if (!isNaN(parsed) && parsed >= 0 && parsed <= 24) {
-                hourNum = parsed;
                 displayTime = `${String(parsed).padStart(2, '0')}:00`;
               }
             }
 
-            // 今より未来の時間帯、または明日の時間帯のみ予報にセット
-            if (displayTime && hourNum !== -1) {
+            if (displayTime) {
               forecastList.push({
                 time: displayTime,
                 wbgt: val,
@@ -105,8 +94,8 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // 重複を除外して未来のデータだけに絞り込み
-      const seenTimes = new Set();
+      // 重複時刻の除外
+      const seenTimes = new Set<string>();
       forecastList = forecastList.filter(item => {
         if (seenTimes.has(item.time)) return false;
         seenTimes.add(item.time);
@@ -114,7 +103,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 予報から現在値のバックアップ（実況値取得失敗時）
+    // バックアップ補完
     if (currentWbgt === null && forecastList.length > 0) {
       currentWbgt = forecastList[0].wbgt;
     }
@@ -125,62 +114,7 @@ export async function GET(request: NextRequest) {
         success: true,
         pointId,
         wbgt: roundedWbgt,
-        // これからの時間（21:00, 24:00, 03:00 ...）直近6コマを返却
         forecast: forecastList.slice(0, 6),
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: '暑さ指数データを解析できませんでした' },
-      { status: 404 }
-    );
-
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || 'Fetch error' },
-      { status: 500 }
-    );
-  }
-}
-      const seenTimes = new Set();
-      forecastList = forecastList.filter(item => {
-        if (seenTimes.has(item.time)) return false;
-        seenTimes.add(item.time);
-        return true;
-      });
-    }
-
-    // 予報から現在値のバックアップ（実況値取得失敗時）
-    if (currentWbgt === null && forecastList.length > 0) {
-      currentWbgt = forecastList[0].wbgt;
-    }
-
-    if (currentWbgt !== null) {
-      const roundedWbgt = Math.round(currentWbgt * 10) / 10;
-      return NextResponse.json({
-        success: true,
-        pointId,
-        wbgt: roundedWbgt,
-        // これからの時間（21:00, 24:00, 03:00 ...）直近6コマを返却
-        forecast: forecastList.slice(0, 6),
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: '暑さ指数データを解析できませんでした' },
-      { status: 404 }
-    );
-
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || 'Fetch error' },
-      { status: 500 }
-    );
-  }
-}
-        wbgt: roundedWbgt,
-        // 直近〜未来の8コマ（24時間分）を返す
-        forecast: forecastList.slice(0, 8),
       });
     }
 
