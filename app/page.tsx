@@ -12,7 +12,6 @@ type Location = {
 type LocationMaster = {
   id: string;
   name: string;
-  fullName: string;
 };
 
 type HourlyData = {
@@ -21,7 +20,7 @@ type HourlyData = {
 };
 
 const DEFAULT_LOCATIONS: Location[] = [
-  { id: '48141', name: '長野' },
+  { id: '48141', name: '長野市' },
   { id: '55111', name: '富山' },
 ];
 
@@ -32,40 +31,23 @@ export default function Home() {
   const [locations, setLocations] = useState<Location[]>(DEFAULT_LOCATIONS);
   const [selectedLocation, setSelectedLocation] = useState<Location>(DEFAULT_LOCATIONS[0]);
   
-  // 設定画面と環境省全地点マスター
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [masterLocations, setMasterLocations] = useState<LocationMaster[]>([]);
   const [loadingMaster, setLoadingMaster] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const [rawWbgt, setRawWbgt] = useState<number>(25.0);
+  const [rawWbgt, setRawWbgt] = useState<number | null>(null);
   const [forecast, setForecast] = useState<HourlyData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 初回表示：保存された地点を取得
-  useEffect(() => {
-    const saved = localStorage.getItem('hare_locations');
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setLocations(parsed);
-          setSelectedLocation(parsed[0]);
-        }
-      } catch (e) {
-        console.error('Failed to parse saved locations', e);
-      }
-    }
-  }, []);
-
- // 初回表示：保存された地点を取得 ＆ 旧データの自動修復
+  // 初回保存地点読み込み & 旧札幌ID自動補正
   useEffect(() => {
     const saved = localStorage.getItem('hare_locations');
     if (saved) {
       try {
         let parsed: Location[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // 古い札幌ID (14166) が残っていたら正しいID (14163) に自動置換
           parsed = parsed.map((loc) =>
             loc.id === '14166' || loc.name.includes('札幌')
               ? { id: '14163', name: '札幌' }
@@ -81,17 +63,47 @@ export default function Home() {
     }
   }, []);
 
-  // 地点データの取得
+  // 設定画面展開時のマスター取得
+  useEffect(() => {
+    if (isSettingsOpen && masterLocations.length === 0) {
+      async function fetchMaster() {
+        try {
+          setLoadingMaster(true);
+          const res = await fetch('/api/locations');
+          const data = await res.json();
+          if (data.locations) setMasterLocations(data.locations);
+        } catch (err) {
+          console.error('Failed to load master locations:', err);
+        } finally {
+          setLoadingMaster(false);
+        }
+      }
+      fetchMaster();
+    }
+  }, [isSettingsOpen, masterLocations.length]);
+
+  // データ取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
         setLoading(true);
+        setErrorMsg(null);
         const res = await fetch(`/api/wbgt?pointId=${selectedLocation.id}`);
         const data = await res.json();
-        if (data.wbgt) setRawWbgt(data.wbgt);
-        if (data.forecast) setForecast(data.forecast);
+
+        if (data.success && data.wbgt !== null) {
+          setRawWbgt(data.wbgt);
+          setForecast(data.forecast || []);
+        } else {
+          setRawWbgt(null);
+          setForecast([]);
+          setErrorMsg('環境省データの取得に失敗しました');
+        }
       } catch (err) {
         console.error('Failed to load WBGT:', err);
+        setRawWbgt(null);
+        setForecast([]);
+        setErrorMsg('通信エラーが発生しました');
       } finally {
         setLoading(false);
       }
@@ -100,12 +112,10 @@ export default function Home() {
     fetchWbgt();
   }, [selectedLocation]);
 
-  // 環境省マスターからのリアルタイム検索フィルタリング
   const filteredMaster = searchQuery.trim()
     ? masterLocations.filter((loc) => loc.name.includes(searchQuery.trim()))
     : [];
 
-  // マスターから地点を選択して追加
   const handleAddFromMaster = (loc: LocationMaster) => {
     if (locations.some((item) => item.id === loc.id)) {
       alert('すでに登録されている地点です。');
@@ -117,7 +127,6 @@ export default function Home() {
     setSearchQuery('');
   };
 
-  // 削除処理
   const handleDeleteLocation = (id: string) => {
     if (locations.length <= 1) {
       alert('最低1つの地点は残してください。');
@@ -129,7 +138,7 @@ export default function Home() {
     if (selectedLocation.id === id) setSelectedLocation(updated[0]);
   };
 
-  const currentAdvice = getAdvice(ageInDays, rawWbgt, transport);
+  const currentAdvice = rawWbgt !== null ? getAdvice(ageInDays, rawWbgt, transport) : null;
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 max-w-md mx-auto text-slate-800 pb-12 relative">
@@ -198,6 +207,8 @@ export default function Home() {
       <section className="bg-white p-6 rounded-2xl shadow-sm mb-4 border border-slate-100 text-center">
         {loading ? (
           <div className="py-8 text-slate-400 text-sm">【{selectedLocation.name}】のデータを読み込み中...</div>
+        ) : errorMsg || !currentAdvice ? (
+          <div className="py-8 text-red-400 text-sm font-medium">{errorMsg || 'データが取得できませんでした'}</div>
         ) : (
           <>
             <div className="text-xs font-bold text-slate-400 mb-2">📍 {selectedLocation.name} の現在状況</div>
@@ -224,7 +235,7 @@ export default function Home() {
       </section>
 
       {/* 時間帯別 予報リスト */}
-      {!loading && forecast.length > 0 && (
+      {!loading && !errorMsg && forecast.length > 0 && (
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
           <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
             ⏱ {selectedLocation.name}の WBGT予報
@@ -265,7 +276,6 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 登録中地点 */}
             <div className="mb-5">
               <label className="text-xs font-bold text-slate-400 block mb-2">登録中の地点</label>
               <div className="space-y-2 max-h-32 overflow-y-auto">
@@ -283,16 +293,15 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 環境省マスターからのリアルタイム検索 */}
             <div className="border-t border-slate-100 pt-4 mb-4">
-              <label className="text-xs font-bold text-slate-700 block mb-1">🔍 環境省の全地点から検索</label>
+              <label className="text-xs font-bold text-slate-700 block mb-1">🔍 全国主要地点から検索</label>
               {loadingMaster ? (
-                <div className="text-xs text-slate-400 py-2">環境省から全国の地点データを取得中...</div>
+                <div className="text-xs text-slate-400 py-2">地点データを取得中...</div>
               ) : (
                 <>
                   <input
                     type="text"
-                    placeholder="例: 札幌、松本、軽井沢など"
+                    placeholder="例: 札幌、松本、大阪など"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 mb-2"
