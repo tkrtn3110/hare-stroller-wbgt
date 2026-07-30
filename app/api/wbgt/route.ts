@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     // -------------------------------------------------------------
-    // 2. 3時間ごとの暑さ指数予報（予測値: prev15WG）の解析
+    // 2. これからの暑さ指数予報（予測値: prev15WG）の取得
     // -------------------------------------------------------------
     const prevUrl = `https://www.wbgt.env.go.jp/prev15WG/dl/yohou_${pointId}.csv`;
     const prevRes = await fetch(prevUrl, {
@@ -62,51 +62,44 @@ export async function GET(request: NextRequest) {
       const csvText = new TextDecoder('shift-jis').decode(arrayBuffer);
       const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim() !== '');
 
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        const cols = line.split(',').map(c => c.trim());
+      // ヘッダー行（0行目）を飛ばして1行目以降を順にパース
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        if (cols.length < 2) continue;
 
-        // 日時と数値が含まれている行を検索
-        for (let j = 0; j < cols.length; j++) {
-          const colStr = cols[j];
+        // 最後の列にある数値（WBGT値）を取得
+        let rawVal = parseFloat(cols[cols.length - 1]);
+        if (isNaN(rawVal)) continue;
 
-          // "21:00" や "2026/07/30 21:00" のような正時（00分）予報行をターゲットにする
-          // (※19:25などの分が付いた更新タイムスタンプ行を除外)
-          if (colStr.includes(':00') || colStr.endsWith('時') || (colStr.length <= 2 && !isNaN(parseInt(colStr)))) {
-            // その行の末尾側からWBGT数値を抽出
-            for (let k = cols.length - 1; k > j; k--) {
-              let val = parseFloat(cols[k]);
-              if (!isNaN(val) && val > 0 && val < 500) {
-                if (val >= 50) val = val / 10;
-                val = Math.round(val * 10) / 10;
+        // 10倍値（240など）なら10で割る
+        if (rawVal >= 50) rawVal = rawVal / 10;
+        const wbgtVal = Math.round(rawVal * 10) / 10;
 
-                // 時間表示の整形 ("21:00")
-                let displayTime = '';
-                if (colStr.includes(':')) {
-                  const parts = colStr.split(' ');
-                  displayTime = parts[parts.length - 1]; // "21:00"
-                } else {
-                  const h = parseInt(colStr, 10);
-                  if (!isNaN(h) && h >= 0 && h <= 24) {
-                    displayTime = `${String(h).padStart(2, '0')}:00`;
-                  }
-                }
+        // 時間表記の取得（例: "2026/07/30 21:00" または "21:00" や "21"）
+        const timeCol = cols.length >= 3 ? cols[1] : cols[0];
+        let displayTime = '';
 
-                if (displayTime && displayTime.endsWith(':00')) {
-                  forecastList.push({
-                    time: displayTime,
-                    wbgt: val,
-                  });
-                }
-                break;
-              }
-            }
-            break;
+        if (timeCol.includes(':')) {
+          const parts = timeCol.split(' ');
+          displayTime = parts[parts.length - 1]; // "21:00"
+        } else {
+          const h = parseInt(timeCol, 10);
+          if (!isNaN(h)) {
+            displayTime = `${String(h).padStart(2, '0')}:00`;
+          } else {
+            displayTime = timeCol;
           }
+        }
+
+        if (wbgtVal > 0 && displayTime) {
+          forecastList.push({
+            time: displayTime,
+            wbgt: wbgtVal,
+          });
         }
       }
 
-      // 重複する時間帯を除外（順序を維持）
+      // 重複除去
       const seen = new Set<string>();
       forecastList = forecastList.filter(item => {
         if (seen.has(item.time)) return false;
@@ -126,7 +119,7 @@ export async function GET(request: NextRequest) {
         success: true,
         pointId,
         wbgt: roundedWbgt,
-        // 未来の予報6コマ（21:00, 24:00, 03:00, 06:00...）を返却
+        // これからの予報コマ（直近6件）を返却
         forecast: forecastList.slice(0, 6),
       });
     }
