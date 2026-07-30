@@ -4,22 +4,19 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   let pointId = searchParams.get('pointId') || searchParams.get('area') || '48156';
 
-  // 札幌の旧ID指定自動補正
-  if (pointId === '14166' || pointId === '14163') pointId = '14163';
-  // 長野の旧ID指定自動補正 (48141は白馬なので長野本庁48156へ補正)
-  if (pointId === '48141') pointId = '48156';
+  // 地点ID補正
+  if (pointId === '14166') pointId = '14163'; // 札幌
+  if (pointId === '48141') pointId = '48156'; // 長野
 
   const now = new Date();
   const yyyy = now.getFullYear();
   const mm = String(now.getMonth() + 1).padStart(2, '0');
   const yyyymm = `${yyyy}${mm}`;
 
-  // 公式マニュアル記載の地点別データファイルURL
+  // 公式マニュアル記載の個別地点データファイルURL
   const urlsToTry = [
-    // 1. 実況値データ (15分〜毎時更新の最新観測値)
-    `https://www.wbgt.env.go.jp/est15WG/dl/wbgt_${pointId}_${yyyymm}.csv`,
-    // 2. 予測値データ (予報)
-    `https://www.wbgt.env.go.jp/prev15WG/dl/yohou_${pointId}.csv`,
+    `https://www.wbgt.env.go.jp/est15WG/dl/wbgt_${pointId}_${yyyymm}.csv`, // 実況値
+    `https://www.wbgt.env.go.jp/prev15WG/dl/yohou_${pointId}.csv`,        // 予測値
   ];
 
   let lastStatus = 500;
@@ -40,7 +37,6 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      // Shift_JISデコード
       const arrayBuffer = await res.arrayBuffer();
       const decoder = new TextDecoder('shift-jis');
       const csvText = decoder.decode(arrayBuffer);
@@ -50,26 +46,34 @@ export async function GET(request: NextRequest) {
 
       let extractedWbgt: number | null = null;
 
-      // --- CSV解析ロジック ---
-      // データの最終行（一番新しい日時データ）から有効なWBGT数値を取得
+      // --- 厳密なWBGT数値の抽出ロジック ---
+      // 実況値CSVは「年,月,日,時,...」と並ぶため、日付・時刻（例: 24）を誤判定しないよう制御
       for (let i = lines.length - 1; i >= 1; i--) {
-        const line = lines[i];
-        const cols = line.split(',').map(c => c.trim());
-
-        // 行の末尾列（最新時刻）から先頭に向かって検索
-        for (let j = cols.length - 1; j >= 0; j--) {
+        const cols = lines[i].split(',').map(c => c.trim());
+        
+        // 1行にデータが複数ある場合、日付・時間カラム（先頭1〜4列）を回避してデータ列を調べる
+        // 通常、環境省CSVのWBGT数値（10倍値: 191など）は最後の列（または後半列）に入っています
+        for (let j = cols.length - 1; j >= Math.min(3, cols.length - 1); j--) {
           const val = parseFloat(cols[j]);
-          // WBGTの有効数値範囲（0〜50℃、10倍値の500未満、欠測値-999等の除外）
-          if (!isNaN(val) && val > 0 && val < 500) {
-            extractedWbgt = val > 50 ? val / 10 : val;
+
+          // WBGT数値の判定ルール:
+          // 1. 10倍値表記の場合 (191 -> 19.1)
+          if (!isNaN(val) && val >= 50 && val <= 400) {
+            extractedWbgt = val / 10;
+            break;
+          }
+          // 2. 小数表記の場合 (19.1)
+          if (!isNaN(val) && val > 5.0 && val < 40.0) {
+            extractedWbgt = val;
             break;
           }
         }
+
         if (extractedWbgt !== null) break;
       }
 
       if (extractedWbgt !== null) {
-        // 小数第1位に四捨五入（環境省サイト表示と統一）
+        // 小数第1位に丸める（札幌本家19.1 -> 19.1℃）
         const roundedWbgt = Math.round(extractedWbgt * 10) / 10;
         return NextResponse.json({
           success: true,
@@ -77,6 +81,8 @@ export async function GET(request: NextRequest) {
           wbgt: roundedWbgt,
           sourceUrl: url,
         });
+      } else {
+        lastErrorDetail = 'WBGT数値カラムが見つかりませんでした';
       }
 
     } catch (err: any) {
@@ -93,3 +99,4 @@ export async function GET(request: NextRequest) {
     { status: lastStatus }
   );
 }
+
