@@ -263,7 +263,7 @@ export default function Home() {
           <div className="grid grid-cols-3 text-center text-xs font-bold text-slate-400 mb-2 px-2">
             <span className="text-left">時間</span>
             <span>指数 (WBGT)</span>
-            <span className="text-right">状況</span>
+            <span className="text-right">お散歩目安</span>
           </div>
 
           <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
