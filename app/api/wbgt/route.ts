@@ -143,32 +143,3 @@ export async function GET(request: NextRequest) {
     );
   }
 }
-    }
-
-    // バックアップ補完
-    if (currentWbgt === null && forecastList.length > 0) {
-      currentWbgt = forecastList[0].wbgt;
-    }
-
-    if (currentWbgt !== null) {
-      const roundedWbgt = Math.round(currentWbgt * 10) / 10;
-      return NextResponse.json({
-        success: true,
-        pointId,
-        wbgt: roundedWbgt,
-        forecast: forecastList.slice(0, 6),
-      });
-    }
-
-    return NextResponse.json(
-      { success: false, error: '暑さ指数データを解析できませんでした' },
-      { status: 404 }
-    );
-
-  } catch (err: any) {
-    return NextResponse.json(
-      { success: false, error: err.message || 'Fetch error' },
-      { status: 500 }
-    );
-  }
-}
