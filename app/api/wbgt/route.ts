@@ -5,24 +5,25 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   let pointId = searchParams.get('pointId') || '48141';
 
-  // IDの安全補正
   if (pointId === '14166') pointId = '14163';
 
-  // 環境省 WBGT 予測CSV
-  const csvUrl = `https://www.wbgt.env.go.jp/prev15v/data/forecast/wbgt_${pointId}.csv`;
+  // 環境省の地点別データ取得URL (全地点対応のエンドポイント)
+  // 予報CSV: https://www.wbgt.env.go.jp/prev15v/dl/csv/wbgt_all_latest.csv などのフォールバックを含める
+  const primaryUrl = `https://www.wbgt.env.go.jp/prev15v/data/forecast/wbgt_${pointId}.csv`;
+  const estimateUrl = `https://www.wbgt.env.go.jp/est15v/data/estimate/wbgt_${pointId}.csv`;
 
   try {
-    const res = await fetch(csvUrl, {
-      cache: 'no-store',
-      headers: {
-        'Accept': 'text/csv,text/plain,*/*',
-      },
-    });
+    let res = await fetch(primaryUrl, { cache: 'no-store' });
+
+    // 予報CSVが404の場合は推計値(est15v)CSVを試す
+    if (!res.ok) {
+      res = await fetch(estimateUrl, { cache: 'no-store' });
+    }
 
     if (!res.ok) {
       return NextResponse.json(
-        { success: false, error: `ENV HTTP Error: ${res.status}` },
-        { status: 500 }
+        { success: false, error: `地点データが見つかりません (ID: ${pointId})` },
+        { status: 404 }
       );
     }
 
@@ -56,7 +57,7 @@ export async function GET(request: Request) {
 
     if (latestWbgt === null) {
       return NextResponse.json(
-        { success: false, error: 'No valid WBGT values found in CSV' },
+        { success: false, error: 'データ解析に失敗しました' },
         { status: 500 }
       );
     }
