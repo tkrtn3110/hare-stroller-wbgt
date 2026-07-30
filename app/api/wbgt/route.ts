@@ -1,60 +1,77 @@
 // app/api/wbgt/route.ts
 import { NextResponse } from 'next/server';
 
+export type HourlyWbgtData = {
+  time: string; // 例: "09:00"
+  wbgt: number;
+};
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  // 地点コード（指定がなければ長野市: 48141）
-  const pointId = searchParams.get('pointId') || '48141';
+  const pointId = searchParams.get('pointId') || '48141'; // 長野市
 
-  // 環境省のWBGT予測CSVのURL
   const csvUrl = `https://www.wbgt.env.go.jp/prev15v/data/forecast/wbgt_${pointId}.csv`;
 
   try {
     const response = await fetch(csvUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0',
-      },
-      // 1時間ごとに最新データをキャッシュ・再取得
+      headers: { 'User-Agent': 'Mozilla/5.0' },
       next: { revalidate: 3600 },
     });
 
-    if (!response.ok) {
-      throw new Error('Failed to fetch from ENV');
-    }
+    if (!response.ok) throw new Error('Failed to fetch from ENV');
 
     const csvText = await response.text();
     const lines = csvText.trim().split('\n');
 
-    // 直近（現在時間帯）の数値を取り出す簡易パース処理
-    let latestWbgt = 25.0; // フォールバック値
+    const hourlyList: HourlyWbgtData[] = [];
+    let latestWbgt = 25.0;
 
-    // CSVの末尾付近から有効なデータ行を探索
-    for (let i = lines.length - 1; i >= 0; i--) {
+    // CSVのデータをパース
+    for (let i = 1; i < lines.length; i++) {
       const row = lines[i].split(',').map((item) => item.trim());
       if (row.length >= 3) {
+        const timeStr = row[1] || ''; // 例: "09:00" または "9"
         let val = parseFloat(row[2]);
+
         if (!isNaN(val)) {
-          // CSV内の値が10倍表記（例: 265 = 26.5℃）の場合の変換
           if (val > 100) val = val / 10;
-          latestWbgt = val;
-          break;
+          latestWbgt = val; // 直近の値を保持
+
+          // 時間の表記を "09:00" 形式に整形
+          const formattedTime = timeStr.includes(':') 
+            ? timeStr 
+            : `${timeStr.padStart(2, '0')}:00`;
+
+          hourlyList.push({
+            time: formattedTime,
+            wbgt: val,
+          });
         }
       }
     }
+
+    // 直近6〜8コマ分（本日の主要な時間帯）を抽出
+    const forecastList = hourlyList.slice(-8);
 
     return NextResponse.json({
       success: true,
       pointId,
       wbgt: latestWbgt,
-      updatedAt: new Date().toISOString(),
+      forecast: forecastList,
     });
   } catch (error) {
-    // データ取得失敗時は安全のためデフォルト値を返す
+    // データ取得失敗時のダミー予報データ
+    const dummyForecast: HourlyWbgtData[] = [
+      { time: '09:00', wbgt: 24.0 },
+      { time: '12:00', wbgt: 27.5 },
+      { time: '15:00', wbgt: 26.0 },
+      { time: '18:00', wbgt: 22.5 },
+    ];
+
     return NextResponse.json({
       success: false,
-      pointId,
       wbgt: 26.0,
-      error: '環境省データの取得に失敗したため、推定値を表示しています。',
+      forecast: dummyForecast,
     });
   }
 }
