@@ -9,48 +9,20 @@ type Location = {
   name: string;
 };
 
+type LocationMaster = {
+  id: string;
+  name: string;
+  fullName: string;
+};
+
 type HourlyData = {
   time: string;
   wbgt: number;
 };
 
-// 環境省 WBGT 主要地点データベース (辞書データ)
-const LOCATION_DATABASE: Location[] = [
-  // 長野県
-  { id: '48141', name: '長野市' },
-  { id: '48206', name: '松本市' },
-  { id: '48056', name: '飯山市' },
-  { id: '48171', name: '上田市' },
-  { id: '48241', name: '諏訪市' },
-  { id: '48301', name: '伊那市' },
-  { id: '48361', name: '飯田市' },
-  { id: '48220', name: '軽井沢町' },
-  // 北陸・隣県
-  { id: '55111', name: '富山市' },
-  { id: '55201', name: '高岡市' },
-  { id: '56111', name: '金沢市' },
-  { id: '57106', name: '福井市' },
-  { id: '54231', name: '新潟市' },
-  { id: '49126', name: '甲府市' },
-  // 東南木・主要都市
-  { id: '44132', name: '東京都（千代田区）' },
-  { id: '44071', name: '東京都（練馬区）' },
-  { id: '44056', name: '東京都（八王子市）' },
-  { id: '46091', name: '横浜市' },
-  { id: '43056', name: 'さいたま市' },
-  { id: '45106', name: '千葉市' },
-  { id: '51106', name: '名古屋市' },
-  { id: '62078', name: '大阪市' },
-  { id: '63086', name: '神戸市' },
-  { id: '61286', name: '京都市' },
-  { id: '82056', name: '福岡市' },
-  { id: '14166', name: '札幌市' },
-  { id: '34396', name: '仙台市' },
-];
-
 const DEFAULT_LOCATIONS: Location[] = [
-  { id: '48141', name: '長野市' },
-  { id: '55111', name: '富山市' },
+  { id: '48141', name: '長野' },
+  { id: '55111', name: '富山' },
 ];
 
 export default function Home() {
@@ -60,16 +32,17 @@ export default function Home() {
   const [locations, setLocations] = useState<Location[]>(DEFAULT_LOCATIONS);
   const [selectedLocation, setSelectedLocation] = useState<Location>(DEFAULT_LOCATIONS[0]);
   
+  // 設定画面と環境省全地点マスター
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [masterLocations, setMasterLocations] = useState<LocationMaster[]>([]);
+  const [loadingMaster, setLoadingMaster] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [customName, setCustomName] = useState<string>('');
-  const [customId, setCustomId] = useState<string>('');
 
   const [rawWbgt, setRawWbgt] = useState<number>(25.0);
   const [forecast, setForecast] = useState<HourlyData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 初回読み込み
+  // 初回表示：保存された地点を取得
   useEffect(() => {
     const saved = localStorage.getItem('hare_locations');
     if (saved) {
@@ -85,7 +58,28 @@ export default function Home() {
     }
   }, []);
 
-  // データ取得
+  // 設定画面が開いたら環境省の全地点マスターを取得
+  useEffect(() => {
+    if (isSettingsOpen && masterLocations.length === 0) {
+      async function fetchMaster() {
+        try {
+          setLoadingMaster(true);
+          const res = await fetch('/api/locations');
+          const data = await res.json();
+          if (data.locations) {
+            setMasterLocations(data.locations);
+          }
+        } catch (err) {
+          console.error('Failed to load master locations:', err);
+        } finally {
+          setLoadingMaster(false);
+        }
+      }
+      fetchMaster();
+    }
+  }, [isSettingsOpen, masterLocations.length]);
+
+  // 地点データの取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
@@ -104,33 +98,21 @@ export default function Home() {
     fetchWbgt();
   }, [selectedLocation]);
 
-  // 地点候補の検索フィルタリング
-  const filteredDatabase = searchQuery.trim()
-    ? LOCATION_DATABASE.filter((loc) => loc.name.includes(searchQuery.trim()))
+  // 環境省マスターからのリアルタイム検索フィルタリング
+  const filteredMaster = searchQuery.trim()
+    ? masterLocations.filter((loc) => loc.name.includes(searchQuery.trim()))
     : [];
 
-  // データベース候補から追加する処理
-  const handleSelectFromDatabase = (loc: Location) => {
+  // マスターから地点を選択して追加
+  const handleAddFromMaster = (loc: LocationMaster) => {
     if (locations.some((item) => item.id === loc.id)) {
       alert('すでに登録されている地点です。');
       return;
     }
-    const updated = [...locations, loc];
+    const updated = [...locations, { id: loc.id, name: loc.name }];
     setLocations(updated);
     localStorage.setItem('hare_locations', JSON.stringify(updated));
     setSearchQuery('');
-  };
-
-  // 手入力で追加する処理
-  const handleAddCustomLocation = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!customName.trim() || !customId.trim()) return;
-
-    const updated = [...locations, { id: customId.trim(), name: customName.trim() }];
-    setLocations(updated);
-    localStorage.setItem('hare_locations', JSON.stringify(updated));
-    setCustomName('');
-    setCustomId('');
   };
 
   // 削除処理
@@ -299,64 +281,42 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 地点名で検索して追加 */}
+            {/* 環境省マスターからのリアルタイム検索 */}
             <div className="border-t border-slate-100 pt-4 mb-4">
-              <label className="text-xs font-bold text-slate-700 block mb-1">🔍 地点名で検索して追加</label>
-              <input
-                type="text"
-                placeholder="例: 松本、横浜、千代田など"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 mb-2"
-              />
+              <label className="text-xs font-bold text-slate-700 block mb-1">🔍 環境省の全地点から検索</label>
+              {loadingMaster ? (
+                <div className="text-xs text-slate-400 py-2">環境省から全国の地点データを取得中...</div>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder="例: 札幌、松本、軽井沢など"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 mb-2"
+                  />
 
-              {/* 検索候補リスト */}
-              {searchQuery.trim() !== '' && (
-                <div className="border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 bg-slate-50">
-                  {filteredDatabase.length > 0 ? (
-                    filteredDatabase.map((loc) => (
-                      <button
-                        key={loc.id}
-                        onClick={() => handleSelectFromDatabase(loc)}
-                        className="w-full text-left p-2.5 text-xs hover:bg-sky-50 transition flex justify-between items-center text-slate-700 font-medium"
-                      >
-                        <span>📍 {loc.name}</span>
-                        <span className="text-sky-600 font-bold">＋ 追加</span>
-                      </button>
-                    ))
-                  ) : (
-                    <div className="p-3 text-xs text-slate-400 text-center">該当する主要都市が見つかりません</div>
+                  {searchQuery.trim() !== '' && (
+                    <div className="border border-slate-200 rounded-xl max-h-40 overflow-y-auto divide-y divide-slate-100 bg-slate-50">
+                      {filteredMaster.length > 0 ? (
+                        filteredMaster.map((loc) => (
+                          <button
+                            key={loc.id}
+                            onClick={() => handleAddFromMaster(loc)}
+                            className="w-full text-left p-2.5 text-xs hover:bg-sky-50 transition flex justify-between items-center text-slate-700 font-medium"
+                          >
+                            <span>📍 {loc.name}</span>
+                            <span className="text-sky-600 font-bold">＋ 追加</span>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="p-3 text-xs text-slate-400 text-center">該当する地点が見つかりません</div>
+                      )}
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
-
-            {/* 地点コードを直接手入力する場合（折りたたみ風） */}
-            <details className="border-t border-slate-100 pt-3 text-xs text-slate-400">
-              <summary className="cursor-pointer font-bold mb-2">直接コード5桁を入力する場合</summary>
-              <form onSubmit={handleAddCustomLocation} className="space-y-2">
-                <input
-                  type="text"
-                  placeholder="地点名"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  className="w-full text-xs p-2 border border-slate-200 rounded-lg"
-                />
-                <input
-                  type="text"
-                  placeholder="コード5桁 (例: 48206)"
-                  value={customId}
-                  onChange={(e) => setCustomId(e.target.value)}
-                  className="w-full text-xs p-2 border border-slate-200 rounded-lg"
-                />
-                <button
-                  type="submit"
-                  className="w-full bg-slate-700 text-white font-bold p-2 rounded-lg"
-                >
-                  コードで追加
-                </button>
-              </form>
-            </details>
           </div>
         </div>
       )}
