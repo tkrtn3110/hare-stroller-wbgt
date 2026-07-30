@@ -25,8 +25,12 @@ const DEFAULT_LOCATIONS: Location[] = [
   { id: '48156', name: '長野市' },
 ];
 
+// デフォルトの誕生日（今日で生後80日目となる2026年5月11日を設定）
+const DEFAULT_BIRTHDATE = '2026-05-11';
+
 export default function Home() {
-  const [ageInDays] = useState<number>(80);
+  const [birthDateStr, setBirthDateStr] = useState<string>(DEFAULT_BIRTHDATE);
+  const [ageInDays, setAgeInDays] = useState<number>(80);
   const [transport, setTransport] = useState<Transportation>('stroller');
 
   const [locations, setLocations] = useState<Location[]>(DEFAULT_LOCATIONS);
@@ -42,8 +46,32 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 初回保存地点の読み込み ＆ 旧誤ID（長野:48141）の自動クレンジング
+  // 誕生日から今日の日数を自動計算する関数
+  const calculateAgeInDays = (bDateStr: string): number => {
+    const birth = new Date(bDateStr);
+    const today = new Date();
+    // 時刻を0:0:0に揃えて正確な日数差を計算
+    birth.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    const diffTime = today.getTime() - birth.getTime();
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays >= 0 ? diffDays : 0;
+  };
+
+  // 初回保存データの読み込み & 生年月日の復元
   useEffect(() => {
+    // 生年月日の保存・復元
+    const savedBirthDate = localStorage.getItem('hare_birthdate');
+    if (savedBirthDate) {
+      setBirthDateStr(savedBirthDate);
+      setAgeInDays(calculateAgeInDays(savedBirthDate));
+    } else {
+      setBirthDateStr(DEFAULT_BIRTHDATE);
+      setAgeInDays(calculateAgeInDays(DEFAULT_BIRTHDATE));
+      localStorage.setItem('hare_birthdate', DEFAULT_BIRTHDATE);
+    }
+
+    // 地点データの読み込み
     const saved = localStorage.getItem('hare_locations');
     if (saved) {
       try {
@@ -77,7 +105,7 @@ export default function Home() {
     }
   }, []);
 
-  // 設定画面展開時のマスター地点一覧取得
+  // 設定画面展开時のマスター地点一覧取得
   useEffect(() => {
     if (isSettingsOpen && masterLocations.length === 0) {
       async function fetchMaster() {
@@ -133,6 +161,14 @@ export default function Home() {
     }
   }, [selectedLocation]);
 
+  // 誕生日変更のハンドラー
+  const handleBirthDateChange = (newDateStr: string) => {
+    setBirthDateStr(newDateStr);
+    const newAge = calculateAgeInDays(newDateStr);
+    setAgeInDays(newAge);
+    localStorage.setItem('hare_birthdate', newDateStr);
+  };
+
   const filteredMaster = searchQuery.trim()
     ? masterLocations.filter((loc) => loc.name.includes(searchQuery.trim()))
     : [];
@@ -174,7 +210,7 @@ export default function Home() {
         <button
           onClick={() => setIsSettingsOpen(true)}
           className="p-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl transition text-slate-600 text-lg"
-          title="地点設定"
+          title="設定"
         >
           ⚙️
         </button>
@@ -311,7 +347,7 @@ export default function Home() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl border border-slate-100 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="font-bold text-slate-800 text-lg">⚙️ 登録地点の設定</h3>
+              <h3 className="font-bold text-slate-800 text-lg">⚙️ 各種設定</h3>
               <button
                 onClick={() => setIsSettingsOpen(false)}
                 className="text-slate-400 font-bold p-1 hover:text-slate-600"
@@ -320,6 +356,19 @@ export default function Home() {
               </button>
             </div>
 
+            {/* 赤ちゃんの生年月日設定 */}
+            <div className="mb-5 pb-4 border-b border-slate-100">
+              <label className="text-xs font-bold text-slate-700 block mb-1.5">👶 生年月日の設定</label>
+              <input
+                type="date"
+                value={birthDateStr}
+                onChange={(e) => handleBirthDateChange(e.target.value)}
+                className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 text-slate-700 font-medium"
+              />
+              <p className="text-[10px] text-slate-400 mt-1">※設定した生年月日から毎日自動で経過日数を計算します。</p>
+            </div>
+
+            {/* 登録地点一覧 */}
             <div className="mb-5">
               <label className="text-xs font-bold text-slate-400 block mb-2">登録中の地点</label>
               <div className="space-y-2 max-h-32 overflow-y-auto">
@@ -337,6 +386,7 @@ export default function Home() {
               </div>
             </div>
 
+            {/* 地点検索・追加 */}
             <div className="border-t border-slate-100 pt-4 mb-4">
               <label className="text-xs font-bold text-slate-700 block mb-1">🔍 全国主要地点から検索</label>
               {loadingMaster ? (
