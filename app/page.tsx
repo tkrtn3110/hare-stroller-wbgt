@@ -42,14 +42,13 @@ export default function Home() {
   const [loading, setLoading] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 初回保存地点の読み込み ＆ 旧誤ID（長野:48141, 札幌:14166）の自動修正クレンジング
+  // 初回保存地点の読み込み ＆ 旧誤ID（長野:48141, 札幌:14166）の自動クレンジング
   useEffect(() => {
     const saved = localStorage.getItem('hare_locations');
     if (saved) {
       try {
         let parsed: Location[] = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // 古い誤った地点IDの変換・クレンジング処理
           parsed = parsed.map((loc) => {
             if (loc.id === '48141' || loc.name.includes('長野')) {
               return { id: '48156', name: '長野市' };
@@ -60,7 +59,6 @@ export default function Home() {
             return loc;
           });
 
-          // 重複除去
           const uniqueLocations = parsed.filter(
             (loc, index, self) => index === self.findIndex((t) => t.id === loc.id)
           );
@@ -98,7 +96,7 @@ export default function Home() {
     }
   }, [isSettingsOpen, masterLocations.length]);
 
-  // 選択地点のWBGTデータ取得（選択地点変更時に自動発火）
+  // 選択地点のWBGTデータ取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
@@ -106,7 +104,6 @@ export default function Home() {
         setErrorMsg(null);
 
         let pointId = selectedLocation.id;
-        // ID補正保護
         if (pointId === '48141') pointId = '48156';
         if (pointId === '14166') pointId = '14163';
 
@@ -136,7 +133,6 @@ export default function Home() {
     }
   }, [selectedLocation]);
 
-  // 設定画面でのマスター検索フィルタ
   const filteredMaster = searchQuery.trim()
     ? masterLocations.filter((loc) => loc.name.includes(searchQuery.trim()))
     : [];
@@ -259,27 +255,42 @@ export default function Home() {
         )}
       </section>
 
-      {/* 時間帯別 予報リスト（予報データが存在する場合のみ表示） */}
+      {/* 時間帯別 予報リスト（整理版） */}
       {!loading && !errorMsg && forecast.length > 0 && (
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
           <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
             ⏱ {selectedLocation.name}の WBGT予報
           </h2>
+
+          {/* 表の見出しヘッダー */}
+          <div className="grid grid-cols-3 text-center text-xs font-bold text-slate-400 mb-2 px-2">
+            <span className="text-left">時間</span>
+            <span>指数 (WBGT)</span>
+            <span className="text-right">状況</span>
+          </div>
+
           <div className="space-y-2">
             {forecast.map((item, idx) => {
               const itemAdvice = getAdvice(ageInDays, item.wbgt, transport);
               return (
                 <div
                   key={idx}
-                  className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-sm"
+                  className="grid grid-cols-3 items-center p-2.5 rounded-xl bg-slate-50 border border-slate-100 text-sm"
                 >
-                  <span className="font-bold text-slate-600 w-16">{item.time}</span>
-                  <div className="flex items-center gap-1 font-extrabold text-slate-800">
-                    <span>{itemAdvice.correctedWbgt}</span>
-                  </div>
-                  <span className={`text-xs text-white font-bold px-2.5 py-1 rounded-full ${itemAdvice.badgeColor}`}>
-                    {itemAdvice.title.split('（')[0]}
+                  {/* 列1: 時間 */}
+                  <span className="font-bold text-slate-600 text-left">{item.time}</span>
+
+                  {/* 列2: 暑さ指数 (補正後) */}
+                  <span className="font-black text-slate-800 text-center">
+                    {itemAdvice.correctedWbgt}
                   </span>
+
+                  {/* 列3: 状況バッジ */}
+                  <div className="text-right">
+                    <span className={`inline-block text-xs text-white font-bold px-2.5 py-1 rounded-full ${itemAdvice.badgeColor}`}>
+                      {itemAdvice.title.split('（')[0]}
+                    </span>
+                  </div>
                 </div>
               );
             })}
