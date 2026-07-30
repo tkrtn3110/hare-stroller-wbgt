@@ -38,7 +38,7 @@ const ALL_LOCATIONS: LocationMaster[] = [
   { id: '42011', name: '前橋' },
 
   // 北陸・甲信越
-  { id: '48141', name: '長野' },
+  { id: '48156', name: '長野' },
   { id: '48206', name: '松本' },
   { id: '48056', name: '飯山' },
   { id: '48171', name: '上田' },
