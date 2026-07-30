@@ -86,11 +86,11 @@ export default function Home() {
             
             <div className="my-2">
               <span className="text-5xl font-black text-slate-800">{currentAdvice.correctedWbgt}</span>
-              <span className="text-lg font-bold text-slate-500 ml-1">℃ (WBGT)</span>
+              <span className="text-sm font-bold text-slate-400 ml-2">(WBGT)</span>
             </div>
 
             <p className="text-xs text-slate-400 mb-4">
-              環境省データ {rawWbgt}℃ ＋ {transport === 'stroller' ? 'ベビーカー補正 (+2.0℃)' : '抱っこ紐補正 (+1.0℃)'}
+              環境省データ {rawWbgt} ＋ {transport === 'stroller' ? 'ベビーカー補正 (+2.0)' : '抱っこ紐補正 (+1.0)'}
             </p>
 
             <div className="bg-slate-50 p-4 rounded-xl text-left border border-slate-100">
@@ -119,7 +119,6 @@ export default function Home() {
                   <span className="font-bold text-slate-600 w-16">{item.time}</span>
                   <div className="flex items-center gap-1 font-extrabold text-slate-800">
                     <span>{itemAdvice.correctedWbgt}</span>
-                    <span className="text-xs font-normal text-slate-400">℃</span>
                   </div>
                   <span className={`text-xs text-white font-bold px-2.5 py-1 rounded-full ${itemAdvice.badgeColor}`}>
                     {itemAdvice.title.split('（')[0]}
