@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     }
 
     // -------------------------------------------------------------
-    // 2. これからの暑さ指数予報（予測値: prev15WG）の取得
+    // 2. 予測値（prev15WG）の解析（ヘッダー時間とデータ値を横持ちマッピング）
     // -------------------------------------------------------------
     const prevUrl = `https://www.wbgt.env.go.jp/prev15WG/dl/yohou_${pointId}.csv`;
     const prevRes = await fetch(prevUrl, {
@@ -62,50 +62,31 @@ export async function GET(request: NextRequest) {
       const csvText = new TextDecoder('shift-jis').decode(arrayBuffer);
       const lines = csvText.trim().split(/\r?\n/).filter(line => line.trim() !== '');
 
-      // ヘッダー行（0行目）を飛ばして1行目以降を順にパース
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(',').map(c => c.trim());
-        if (cols.length < 2) continue;
+      if (lines.length >= 2) {
+        // 0行目: 日時ヘッダー列 (例: '', '', '2026073021', '2026073024', ...)
+        const headerCols = lines[0].split(',').map(c => c.trim());
+        // 1行目: 数値データ列 (例: '48156', '2026/07/30 19:25', '240', '230', ...)
+        const dataCols = lines[1].split(',').map(c => c.trim());
 
-        // 最後の列にある数値（WBGT値）を取得
-        let rawVal = parseFloat(cols[cols.length - 1]);
-        if (isNaN(rawVal)) continue;
+        // 3列目(インデックス2)から順に対応付けて抽出
+        for (let idx = 2; idx < headerCols.length && idx < dataCols.length; idx++) {
+          const rawTime = headerCols[idx];
+          const rawVal = parseFloat(dataCols[idx]);
 
-        // 10倍値（240など）なら10で割る
-        if (rawVal >= 50) rawVal = rawVal / 10;
-        const wbgtVal = Math.round(rawVal * 10) / 10;
+          if (rawTime && !isNaN(rawVal) && rawVal > 0) {
+            // 例: "2026073021" -> 末尾2桁を取り出して "21:00"
+            const hourStr = rawTime.length >= 10 ? rawTime.slice(8, 10) : rawTime;
+            const displayTime = `${hourStr.padStart(2, '0')}:00`;
 
-        // 時間表記の取得（例: "2026/07/30 21:00" または "21:00" や "21"）
-        const timeCol = cols.length >= 3 ? cols[1] : cols[0];
-        let displayTime = '';
+            const wbgtVal = rawVal >= 50 ? rawVal / 10 : rawVal;
 
-        if (timeCol.includes(':')) {
-          const parts = timeCol.split(' ');
-          displayTime = parts[parts.length - 1]; // "21:00"
-        } else {
-          const h = parseInt(timeCol, 10);
-          if (!isNaN(h)) {
-            displayTime = `${String(h).padStart(2, '0')}:00`;
-          } else {
-            displayTime = timeCol;
+            forecastList.push({
+              time: displayTime,
+              wbgt: Math.round(wbgtVal * 10) / 10,
+            });
           }
         }
-
-        if (wbgtVal > 0 && displayTime) {
-          forecastList.push({
-            time: displayTime,
-            wbgt: wbgtVal,
-          });
-        }
       }
-
-      // 重複除去
-      const seen = new Set<string>();
-      forecastList = forecastList.filter(item => {
-        if (seen.has(item.time)) return false;
-        seen.add(item.time);
-        return true;
-      });
     }
 
     // バックアップ補完
@@ -119,7 +100,7 @@ export async function GET(request: NextRequest) {
         success: true,
         pointId,
         wbgt: roundedWbgt,
-        // これからの予報コマ（直近6件）を返却
+        // 直近6コマ (21:00, 24:00, 03:00, 06:00, 09:00, 12:00) を返却
         forecast: forecastList.slice(0, 6),
       });
     }
