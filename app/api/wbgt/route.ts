@@ -5,21 +5,28 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   let pointId = searchParams.get('pointId') || '48141';
 
+  // IDの安全補正
   if (pointId === '14166') pointId = '14163';
 
+  // 環境省 WBGT 予測CSV
   const csvUrl = `https://www.wbgt.env.go.jp/prev15v/data/forecast/wbgt_${pointId}.csv`;
 
   try {
-    const response = await fetch(csvUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
+    const res = await fetch(csvUrl, {
       cache: 'no-store',
+      headers: {
+        'Accept': 'text/csv,text/plain,*/*',
+      },
     });
 
-    if (!response.ok) throw new Error(`HTTP Status ${response.status}`);
+    if (!res.ok) {
+      return NextResponse.json(
+        { success: false, error: `ENV HTTP Error: ${res.status}` },
+        { status: 500 }
+      );
+    }
 
-    const csvText = await response.text();
+    const csvText = await res.text();
     const lines = csvText.trim().split(/\r?\n/);
 
     const hourlyList: { time: string; wbgt: number }[] = [];
@@ -47,7 +54,12 @@ export async function GET(request: Request) {
       }
     }
 
-    if (latestWbgt === null) throw new Error('No valid WBGT values');
+    if (latestWbgt === null) {
+      return NextResponse.json(
+        { success: false, error: 'No valid WBGT values found in CSV' },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
@@ -55,16 +67,10 @@ export async function GET(request: Request) {
       wbgt: latestWbgt,
       forecast: hourlyList.slice(-8),
     });
-  } catch (error) {
-    console.error(`Fetch error for point ${pointId}:`, error);
-
-    // ダミーデータを排出し、失敗状態だけを返す
-    return NextResponse.json({
-      success: false,
-      pointId,
-      wbgt: null,
-      forecast: [],
-      error: 'データの取得に失敗しました',
-    });
+  } catch (error: any) {
+    return NextResponse.json(
+      { success: false, error: error.message || 'Fetch failed' },
+      { status: 500 }
+    );
   }
 }

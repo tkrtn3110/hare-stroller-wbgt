@@ -82,9 +82,9 @@ export default function Home() {
     }
   }, [isSettingsOpen, masterLocations.length]);
 
-  // ★ブラウザ直接取得によるWBGTデータ取得処理★
+  // 自作API経由でデータ取得
   useEffect(() => {
-    async function fetchWbgtDirect() {
+    async function fetchWbgt() {
       try {
         setLoading(true);
         setErrorMsg(null);
@@ -92,71 +92,28 @@ export default function Home() {
         let pointId = selectedLocation.id;
         if (pointId === '14166') pointId = '14163';
 
-        // 環境省CSV URL
-        const csvUrl = `https://www.wbgt.env.go.jp/prev15v/data/forecast/wbgt_${pointId}.csv`;
+        const res = await fetch(`/api/wbgt?pointId=${pointId}`);
+        const data = await res.json();
 
-        const res = await fetch(csvUrl, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
-
-        const csvText = await res.text();
-        const lines = csvText.trim().split(/\r?\n/);
-
-        const hourlyList: HourlyData[] = [];
-        let latestWbgt: number | null = null;
-
-        for (let i = 1; i < lines.length; i++) {
-          const row = lines[i].split(',').map((item) => item.trim());
-          if (row.length >= 3) {
-            const rawTime = row[1] || '';
-            let val = parseFloat(row[2]);
-
-            if (!isNaN(val)) {
-              if (val > 100) val = val / 10;
-              latestWbgt = val;
-
-              const formattedTime = rawTime.includes(':')
-                ? rawTime
-                : `${rawTime.padStart(2, '0')}:00`;
-
-              hourlyList.push({
-                time: formattedTime,
-                wbgt: val,
-              });
-            }
-          }
-        }
-
-        if (latestWbgt !== null) {
-          setRawWbgt(latestWbgt);
-          setForecast(hourlyList.slice(-8));
+        if (data.success && data.wbgt !== null) {
+          setRawWbgt(data.wbgt);
+          setForecast(data.forecast || []);
         } else {
-          throw new Error('No valid data');
+          setRawWbgt(null);
+          setForecast([]);
+          setErrorMsg(data.error || '環境省データの取得に失敗しました');
         }
       } catch (err) {
-        console.error('Direct fetch failed, trying proxy...', err);
-        
-        // 直取得失敗時の予備（自作API経由）
-        try {
-          const res = await fetch(`/api/wbgt?pointId=${selectedLocation.id}`);
-          const data = await res.json();
-          if (data.success && data.wbgt !== null) {
-            setRawWbgt(data.wbgt);
-            setForecast(data.forecast || []);
-            return;
-          }
-        } catch (e) {
-          console.error('Proxy also failed', e);
-        }
-
+        console.error('API fetch failed:', err);
         setRawWbgt(null);
         setForecast([]);
-        setErrorMsg('環境省データの取得に失敗しました');
+        setErrorMsg('通信エラーが発生しました');
       } finally {
         setLoading(false);
       }
     }
 
-    fetchWbgtDirect();
+    fetchWbgt();
   }, [selectedLocation]);
 
   const filteredMaster = searchQuery.trim()
