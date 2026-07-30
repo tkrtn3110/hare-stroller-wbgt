@@ -58,26 +58,28 @@ export default function Home() {
     }
   }, []);
 
-  // 設定画面が開いたら環境省の全地点マスターを取得
+ // 初回表示：保存された地点を取得 ＆ 旧データの自動修復
   useEffect(() => {
-    if (isSettingsOpen && masterLocations.length === 0) {
-      async function fetchMaster() {
-        try {
-          setLoadingMaster(true);
-          const res = await fetch('/api/locations');
-          const data = await res.json();
-          if (data.locations) {
-            setMasterLocations(data.locations);
-          }
-        } catch (err) {
-          console.error('Failed to load master locations:', err);
-        } finally {
-          setLoadingMaster(false);
+    const saved = localStorage.getItem('hare_locations');
+    if (saved) {
+      try {
+        let parsed: Location[] = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // 古い札幌ID (14166) が残っていたら正しいID (14163) に自動置換
+          parsed = parsed.map((loc) =>
+            loc.id === '14166' || loc.name.includes('札幌')
+              ? { id: '14163', name: '札幌' }
+              : loc
+          );
+          setLocations(parsed);
+          setSelectedLocation(parsed[0]);
+          localStorage.setItem('hare_locations', JSON.stringify(parsed));
         }
+      } catch (e) {
+        console.error('Failed to parse saved locations', e);
       }
-      fetchMaster();
     }
-  }, [isSettingsOpen, masterLocations.length]);
+  }, []);
 
   // 地点データの取得
   useEffect(() => {
