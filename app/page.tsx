@@ -9,18 +9,30 @@ type HourlyData = {
   wbgt: number;
 };
 
+// 登録地点のリスト（必要に応じて追加・変更可能）
+const LOCATIONS = [
+  { id: '48141', name: '長野市' },
+  { id: '55111', name: '富山市' },
+  { id: '44132', name: '東京都' },
+];
+
 export default function Home() {
   const [ageInDays] = useState<number>(80);
   const [transport, setTransport] = useState<Transportation>('stroller');
+  
+  // 選択中の地点管理
+  const [selectedLocation, setSelectedLocation] = useState(LOCATIONS[0]);
+  
   const [rawWbgt, setRawWbgt] = useState<number>(25.0);
   const [forecast, setForecast] = useState<HourlyData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
+  // 地点が切り替わったらデータを再取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
         setLoading(true);
-        const res = await fetch('/api/wbgt?pointId=48141');
+        const res = await fetch(`/api/wbgt?pointId=${selectedLocation.id}`);
         const data = await res.json();
         if (data.wbgt) setRawWbgt(data.wbgt);
         if (data.forecast) setForecast(data.forecast);
@@ -32,20 +44,36 @@ export default function Home() {
     }
 
     fetchWbgt();
-  }, []);
+  }, [selectedLocation]);
 
   const currentAdvice = getAdvice(ageInDays, rawWbgt, transport);
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 max-w-md mx-auto text-slate-800 pb-12">
       {/* ヘッダー情報 */}
-      <header className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-slate-100">
-        <h1 className="text-xl font-bold text-slate-900">👶 晴ちゃんのお散歩チェック</h1>
-        <div className="mt-2 text-sm text-slate-500 flex justify-between items-center">
-          <span>生後 {ageInDays} 日目（月齢 {Math.floor(ageInDays / 30)}ヶ月）</span>
-          <span className="text-xs bg-slate-100 px-2 py-1 rounded font-medium">長野市</span>
+      <header className="bg-white p-4 rounded-2xl shadow-sm mb-3 border border-slate-100">
+        <h1 className="text-xl font-bold text-slate-900 mb-2">👶 晴ちゃんのお散歩チェック</h1>
+        <div className="text-sm text-slate-500">
+          生後 {ageInDays} 日目（月齢 {Math.floor(ageInDays / 30)}ヶ月）
         </div>
       </header>
+
+      {/* 地点切り替えタブ */}
+      <section className="flex gap-2 mb-4 overflow-x-auto pb-1">
+        {LOCATIONS.map((loc) => (
+          <button
+            key={loc.id}
+            onClick={() => setSelectedLocation(loc)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+              selectedLocation.id === loc.id
+                ? 'bg-slate-800 text-white shadow-sm'
+                : 'bg-white text-slate-600 border border-slate-200'
+            }`}
+          >
+            📍 {loc.name}
+          </button>
+        ))}
+      </section>
 
       {/* 移動手段切り替え */}
       <section className="bg-white p-4 rounded-2xl shadow-sm mb-4 border border-slate-100">
@@ -77,9 +105,10 @@ export default function Home() {
       {/* メイン判定カード */}
       <section className="bg-white p-6 rounded-2xl shadow-sm mb-4 border border-slate-100 text-center">
         {loading ? (
-          <div className="py-8 text-slate-400 text-sm">環境省から最新データを読み込み中...</div>
+          <div className="py-8 text-slate-400 text-sm">【{selectedLocation.name}】のデータを読み込み中...</div>
         ) : (
           <>
+            <div className="text-xs font-bold text-slate-400 mb-2">📍 {selectedLocation.name} の現在状況</div>
             <span className={`inline-block text-white text-xs font-bold px-3 py-1 rounded-full mb-3 ${currentAdvice.badgeColor}`}>
               {currentAdvice.title}
             </span>
@@ -106,7 +135,7 @@ export default function Home() {
       {!loading && forecast.length > 0 && (
         <section className="bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
           <h2 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-            ⏱ 本日の時間帯別 WBGT予報
+            ⏱ {selectedLocation.name}の WBGT予報
           </h2>
           <div className="space-y-2">
             {forecast.map((item, idx) => {
