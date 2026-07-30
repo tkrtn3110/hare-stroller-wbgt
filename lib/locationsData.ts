@@ -4,7 +4,6 @@ export type LocationMaster = {
   name: string;
 };
 
-// 環境省の全国主要観測地点マスター (一部抜粋・網羅)
 export const ALL_LOCATIONS: LocationMaster[] = [
   // 北海道
   { id: '14163', name: '札幌' },
@@ -35,8 +34,8 @@ export const ALL_LOCATIONS: LocationMaster[] = [
   { id: '41011', name: '宇都宮' },
   { id: '42011', name: '前橋' },
 
-  // 北陸・甲信越（長野県全域強化）
-  { id: '48141', name: '長野' },
+  // 北陸・甲信越
+  { id: '48156', name: '長野' }, // ← 48141(白馬)から 48156(長野地方気象台) に修正
   { id: '48206', name: '松本' },
   { id: '48056', name: '飯山' },
   { id: '48171', name: '上田' },
