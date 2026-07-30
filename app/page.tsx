@@ -14,7 +14,40 @@ type HourlyData = {
   wbgt: number;
 };
 
-// 初期地点リスト（LocalStorageがない場合に使用）
+// 環境省 WBGT 主要地点データベース (辞書データ)
+const LOCATION_DATABASE: Location[] = [
+  // 長野県
+  { id: '48141', name: '長野市' },
+  { id: '48206', name: '松本市' },
+  { id: '48056', name: '飯山市' },
+  { id: '48171', name: '上田市' },
+  { id: '48241', name: '諏訪市' },
+  { id: '48301', name: '伊那市' },
+  { id: '48361', name: '飯田市' },
+  { id: '48220', name: '軽井沢町' },
+  // 北陸・隣県
+  { id: '55111', name: '富山市' },
+  { id: '55201', name: '高岡市' },
+  { id: '56111', name: '金沢市' },
+  { id: '57106', name: '福井市' },
+  { id: '54231', name: '新潟市' },
+  { id: '49126', name: '甲府市' },
+  // 東南木・主要都市
+  { id: '44132', name: '東京都（千代田区）' },
+  { id: '44071', name: '東京都（練馬区）' },
+  { id: '44056', name: '東京都（八王子市）' },
+  { id: '46091', name: '横浜市' },
+  { id: '43056', name: 'さいたま市' },
+  { id: '45106', name: '千葉市' },
+  { id: '51106', name: '名古屋市' },
+  { id: '62078', name: '大阪市' },
+  { id: '63086', name: '神戸市' },
+  { id: '61286', name: '京都市' },
+  { id: '82056', name: '福岡市' },
+  { id: '14166', name: '札幌市' },
+  { id: '34396', name: '仙台市' },
+];
+
 const DEFAULT_LOCATIONS: Location[] = [
   { id: '48141', name: '長野市' },
   { id: '55111', name: '富山市' },
@@ -24,20 +57,19 @@ export default function Home() {
   const [ageInDays] = useState<number>(80);
   const [transport, setTransport] = useState<Transportation>('stroller');
   
-  // 地点リストと選択中の地点
   const [locations, setLocations] = useState<Location[]>(DEFAULT_LOCATIONS);
   const [selectedLocation, setSelectedLocation] = useState<Location>(DEFAULT_LOCATIONS[0]);
   
-  // 設定画面（モーダル）の開閉状態
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [newLocName, setNewLocName] = useState<string>('');
-  const [newLocId, setNewLocId] = useState<string>('');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [customName, setCustomName] = useState<string>('');
+  const [customId, setCustomId] = useState<string>('');
 
   const [rawWbgt, setRawWbgt] = useState<number>(25.0);
   const [forecast, setForecast] = useState<HourlyData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 1. 初回起動時にLocalStorageから地点リストを読み込む
+  // 初回読み込み
   useEffect(() => {
     const saved = localStorage.getItem('hare_locations');
     if (saved) {
@@ -53,7 +85,7 @@ export default function Home() {
     }
   }, []);
 
-  // 2. 選択中の地点が切り替わったらデータを再取得
+  // データ取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
@@ -72,19 +104,36 @@ export default function Home() {
     fetchWbgt();
   }, [selectedLocation]);
 
-  // 地点の追加処理
-  const handleAddLocation = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLocName.trim() || !newLocId.trim()) return;
+  // 地点候補の検索フィルタリング
+  const filteredDatabase = searchQuery.trim()
+    ? LOCATION_DATABASE.filter((loc) => loc.name.includes(searchQuery.trim()))
+    : [];
 
-    const updated = [...locations, { id: newLocId.trim(), name: newLocName.trim() }];
+  // データベース候補から追加する処理
+  const handleSelectFromDatabase = (loc: Location) => {
+    if (locations.some((item) => item.id === loc.id)) {
+      alert('すでに登録されている地点です。');
+      return;
+    }
+    const updated = [...locations, loc];
     setLocations(updated);
     localStorage.setItem('hare_locations', JSON.stringify(updated));
-    setNewLocName('');
-    setNewLocId('');
+    setSearchQuery('');
   };
 
-  // 地点の削除処理
+  // 手入力で追加する処理
+  const handleAddCustomLocation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!customName.trim() || !customId.trim()) return;
+
+    const updated = [...locations, { id: customId.trim(), name: customName.trim() }];
+    setLocations(updated);
+    localStorage.setItem('hare_locations', JSON.stringify(updated));
+    setCustomName('');
+    setCustomId('');
+  };
+
+  // 削除処理
   const handleDeleteLocation = (id: string) => {
     if (locations.length <= 1) {
       alert('最低1つの地点は残してください。');
@@ -93,17 +142,14 @@ export default function Home() {
     const updated = locations.filter((loc) => loc.id !== id);
     setLocations(updated);
     localStorage.setItem('hare_locations', JSON.stringify(updated));
-    
-    if (selectedLocation.id === id) {
-      setSelectedLocation(updated[0]);
-    }
+    if (selectedLocation.id === id) setSelectedLocation(updated[0]);
   };
 
   const currentAdvice = getAdvice(ageInDays, rawWbgt, transport);
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 max-w-md mx-auto text-slate-800 pb-12 relative">
-      {/* ヘッダー情報 */}
+      {/* ヘッダー */}
       <header className="bg-white p-4 rounded-2xl shadow-sm mb-3 border border-slate-100 flex justify-between items-center">
         <div>
           <h1 className="text-xl font-bold text-slate-900">👶 晴ちゃんのお散歩チェック</h1>
@@ -111,7 +157,6 @@ export default function Home() {
             生後 {ageInDays} 日目（月齢 {Math.floor(ageInDays / 30)}ヶ月）
           </div>
         </div>
-        {/* 設定ボタン */}
         <button
           onClick={() => setIsSettingsOpen(true)}
           className="p-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl transition text-slate-600 text-lg"
@@ -222,10 +267,10 @@ export default function Home() {
         </section>
       )}
 
-      {/* 設定モーダルポップアップ */}
+      {/* 設定モーダル */}
       {isSettingsOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl border border-slate-100">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl border border-slate-100 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h3 className="font-bold text-slate-800 text-lg">⚙️ 登録地点の設定</h3>
               <button
@@ -236,16 +281,13 @@ export default function Home() {
               </button>
             </div>
 
-            {/* 登録済み地点一覧 */}
-            <div className="mb-4">
+            {/* 登録中地点 */}
+            <div className="mb-5">
               <label className="text-xs font-bold text-slate-400 block mb-2">登録中の地点</label>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div className="space-y-2 max-h-32 overflow-y-auto">
                 {locations.map((loc) => (
                   <div key={loc.id} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl text-xs">
-                    <div>
-                      <span className="font-bold text-slate-700 mr-2">{loc.name}</span>
-                      <span className="text-slate-400">({loc.id})</span>
-                    </div>
+                    <span className="font-bold text-slate-700">{loc.name}</span>
                     <button
                       onClick={() => handleDeleteLocation(loc.id)}
                       className="text-red-500 hover:text-red-700 font-bold px-2 py-1"
@@ -257,32 +299,64 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 新規追加フォーム */}
-            <form onSubmit={handleAddLocation} className="border-t border-slate-100 pt-3">
-              <label className="text-xs font-bold text-slate-400 block mb-2">新しい地点を追加</label>
-              <div className="space-y-2 mb-3">
+            {/* 地点名で検索して追加 */}
+            <div className="border-t border-slate-100 pt-4 mb-4">
+              <label className="text-xs font-bold text-slate-700 block mb-1">🔍 地点名で検索して追加</label>
+              <input
+                type="text"
+                placeholder="例: 松本、横浜、千代田など"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500 mb-2"
+              />
+
+              {/* 検索候補リスト */}
+              {searchQuery.trim() !== '' && (
+                <div className="border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100 bg-slate-50">
+                  {filteredDatabase.length > 0 ? (
+                    filteredDatabase.map((loc) => (
+                      <button
+                        key={loc.id}
+                        onClick={() => handleSelectFromDatabase(loc)}
+                        className="w-full text-left p-2.5 text-xs hover:bg-sky-50 transition flex justify-between items-center text-slate-700 font-medium"
+                      >
+                        <span>📍 {loc.name}</span>
+                        <span className="text-sky-600 font-bold">＋ 追加</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="p-3 text-xs text-slate-400 text-center">該当する主要都市が見つかりません</div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* 地点コードを直接手入力する場合（折りたたみ風） */}
+            <details className="border-t border-slate-100 pt-3 text-xs text-slate-400">
+              <summary className="cursor-pointer font-bold mb-2">直接コード5桁を入力する場合</summary>
+              <form onSubmit={handleAddCustomLocation} className="space-y-2">
                 <input
                   type="text"
-                  placeholder="地点名 (例: 松本市)"
-                  value={newLocName}
-                  onChange={(e) => setNewLocName(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500"
+                  placeholder="地点名"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                  className="w-full text-xs p-2 border border-slate-200 rounded-lg"
                 />
                 <input
                   type="text"
-                  placeholder="地点コード5桁 (例: 48206)"
-                  value={newLocId}
-                  onChange={(e) => setNewLocId(e.target.value)}
-                  className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500"
+                  placeholder="コード5桁 (例: 48206)"
+                  value={customId}
+                  onChange={(e) => setCustomId(e.target.value)}
+                  className="w-full text-xs p-2 border border-slate-200 rounded-lg"
                 />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-sky-500 text-white font-bold text-xs p-2.5 rounded-xl hover:bg-sky-600 transition"
-              >
-                ＋ 地点を追加する
-              </button>
-            </form>
+                <button
+                  type="submit"
+                  className="w-full bg-slate-700 text-white font-bold p-2 rounded-lg"
+                >
+                  コードで追加
+                </button>
+              </form>
+            </details>
           </div>
         </div>
       )}
