@@ -4,30 +4,56 @@
 import { useState, useEffect } from 'react';
 import { Transportation, getAdvice } from '../lib/wbgt';
 
+type Location = {
+  id: string;
+  name: string;
+};
+
 type HourlyData = {
   time: string;
   wbgt: number;
 };
 
-// 登録地点のリスト（必要に応じて追加・変更可能）
-const LOCATIONS = [
+// 初期地点リスト（LocalStorageがない場合に使用）
+const DEFAULT_LOCATIONS: Location[] = [
   { id: '48141', name: '長野市' },
   { id: '55111', name: '富山市' },
-  { id: '44132', name: '東京都' },
 ];
 
 export default function Home() {
   const [ageInDays] = useState<number>(80);
   const [transport, setTransport] = useState<Transportation>('stroller');
   
-  // 選択中の地点管理
-  const [selectedLocation, setSelectedLocation] = useState(LOCATIONS[0]);
+  // 地点リストと選択中の地点
+  const [locations, setLocations] = useState<Location[]>(DEFAULT_LOCATIONS);
+  const [selectedLocation, setSelectedLocation] = useState<Location>(DEFAULT_LOCATIONS[0]);
   
+  // 設定画面（モーダル）の開閉状態
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [newLocName, setNewLocName] = useState<string>('');
+  const [newLocId, setNewLocId] = useState<string>('');
+
   const [rawWbgt, setRawWbgt] = useState<number>(25.0);
   const [forecast, setForecast] = useState<HourlyData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // 地点が切り替わったらデータを再取得
+  // 1. 初回起動時にLocalStorageから地点リストを読み込む
+  useEffect(() => {
+    const saved = localStorage.getItem('hare_locations');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setLocations(parsed);
+          setSelectedLocation(parsed[0]);
+        }
+      } catch (e) {
+        console.error('Failed to parse saved locations', e);
+      }
+    }
+  }, []);
+
+  // 2. 選択中の地点が切り替わったらデータを再取得
   useEffect(() => {
     async function fetchWbgt() {
       try {
@@ -46,21 +72,58 @@ export default function Home() {
     fetchWbgt();
   }, [selectedLocation]);
 
+  // 地点の追加処理
+  const handleAddLocation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLocName.trim() || !newLocId.trim()) return;
+
+    const updated = [...locations, { id: newLocId.trim(), name: newLocName.trim() }];
+    setLocations(updated);
+    localStorage.setItem('hare_locations', JSON.stringify(updated));
+    setNewLocName('');
+    setNewLocId('');
+  };
+
+  // 地点の削除処理
+  const handleDeleteLocation = (id: string) => {
+    if (locations.length <= 1) {
+      alert('最低1つの地点は残してください。');
+      return;
+    }
+    const updated = locations.filter((loc) => loc.id !== id);
+    setLocations(updated);
+    localStorage.setItem('hare_locations', JSON.stringify(updated));
+    
+    if (selectedLocation.id === id) {
+      setSelectedLocation(updated[0]);
+    }
+  };
+
   const currentAdvice = getAdvice(ageInDays, rawWbgt, transport);
 
   return (
-    <main className="min-h-screen bg-slate-50 p-4 max-w-md mx-auto text-slate-800 pb-12">
+    <main className="min-h-screen bg-slate-50 p-4 max-w-md mx-auto text-slate-800 pb-12 relative">
       {/* ヘッダー情報 */}
-      <header className="bg-white p-4 rounded-2xl shadow-sm mb-3 border border-slate-100">
-        <h1 className="text-xl font-bold text-slate-900 mb-2">👶 晴ちゃんのお散歩チェック</h1>
-        <div className="text-sm text-slate-500">
-          生後 {ageInDays} 日目（月齢 {Math.floor(ageInDays / 30)}ヶ月）
+      <header className="bg-white p-4 rounded-2xl shadow-sm mb-3 border border-slate-100 flex justify-between items-center">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900">👶 晴ちゃんのお散歩チェック</h1>
+          <div className="text-xs text-slate-500 mt-1">
+            生後 {ageInDays} 日目（月齢 {Math.floor(ageInDays / 30)}ヶ月）
+          </div>
         </div>
+        {/* 設定ボタン */}
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="p-2.5 bg-slate-100 hover:bg-slate-200 rounded-xl transition text-slate-600 text-lg"
+          title="地点設定"
+        >
+          ⚙️
+        </button>
       </header>
 
       {/* 地点切り替えタブ */}
       <section className="flex gap-2 mb-4 overflow-x-auto pb-1">
-        {LOCATIONS.map((loc) => (
+        {locations.map((loc) => (
           <button
             key={loc.id}
             onClick={() => setSelectedLocation(loc)}
@@ -157,6 +220,71 @@ export default function Home() {
             })}
           </div>
         </section>
+      )}
+
+      {/* 設定モーダルポップアップ */}
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl border border-slate-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-slate-800 text-lg">⚙️ 登録地点の設定</h3>
+              <button
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-slate-400 font-bold p-1 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* 登録済み地点一覧 */}
+            <div className="mb-4">
+              <label className="text-xs font-bold text-slate-400 block mb-2">登録中の地点</label>
+              <div className="space-y-2 max-h-40 overflow-y-auto">
+                {locations.map((loc) => (
+                  <div key={loc.id} className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl text-xs">
+                    <div>
+                      <span className="font-bold text-slate-700 mr-2">{loc.name}</span>
+                      <span className="text-slate-400">({loc.id})</span>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteLocation(loc.id)}
+                      className="text-red-500 hover:text-red-700 font-bold px-2 py-1"
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 新規追加フォーム */}
+            <form onSubmit={handleAddLocation} className="border-t border-slate-100 pt-3">
+              <label className="text-xs font-bold text-slate-400 block mb-2">新しい地点を追加</label>
+              <div className="space-y-2 mb-3">
+                <input
+                  type="text"
+                  placeholder="地点名 (例: 松本市)"
+                  value={newLocName}
+                  onChange={(e) => setNewLocName(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500"
+                />
+                <input
+                  type="text"
+                  placeholder="地点コード5桁 (例: 48206)"
+                  value={newLocId}
+                  onChange={(e) => setNewLocId(e.target.value)}
+                  className="w-full text-xs p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-sky-500"
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-sky-500 text-white font-bold text-xs p-2.5 rounded-xl hover:bg-sky-600 transition"
+              >
+                ＋ 地点を追加する
+              </button>
+            </form>
+          </div>
+        </div>
       )}
     </main>
   );
